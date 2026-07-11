@@ -1,0 +1,5 @@
+# Core
+python-dotenv==1.0.1
+
+# Streaming
+confluent-kafka==2.15.0

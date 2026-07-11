@@ -1,0 +1,146 @@
+# Bitestream — Phase 1 infrastructure (Kafka KRaft + Kafka UI)
+# Run from this directory: docker compose up -d
+# Requires: docker/.env (copy from .env.example)
+
+name: bitestream
+
+services:
+  kafka:
+    image: ${KAFKA_IMAGE}
+    hostname: ${KAFKA_HOSTNAME}
+    container_name: ${KAFKA_HOSTNAME}
+    restart: ${DOCKER_RESTART_POLICY}
+
+    ports:
+      # Host clients (Python producer/consumer on laptop) use localhost:9092
+      - "${KAFKA_HOST_PORT}:9092"
+
+    environment:
+      TZ: ${TZ}
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS}
+      KAFKA_LOG4J_ROOT_LOGLEVEL: ${KAFKA_LOG4J_ROOT_LOGLEVEL}
+
+      # --- KRaft (combined broker + controller, single-node dev cluster) ---
+      KAFKA_NODE_ID: ${KAFKA_NODE_ID}
+      KAFKA_PROCESS_ROLES: broker,controller
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID}
+      KAFKA_CONTROLLER_QUORUM_VOTERS: ${KAFKA_NODE_ID}@${KAFKA_HOSTNAME}:${KAFKA_CONTROLLER_PORT}
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # Dual listeners: internal (Docker DNS) + external (host machine)
+      # PLAINTEXT       — inter-container traffic on bitestream-net (kafka-ui, init-topics)
+      # PLAINTEXT_HOST  — host-machine clients (Python producer/consumer on localhost)
+      # CONTROLLER      — KRaft metadata quorum (internal only, not host-exposed)
+      KAFKA_LISTENERS: >-
+        PLAINTEXT://${KAFKA_HOSTNAME}:${KAFKA_INTERNAL_PORT},
+        CONTROLLER://${KAFKA_HOSTNAME}:${KAFKA_CONTROLLER_PORT},
+        PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: >-
+        PLAINTEXT://${KAFKA_HOSTNAME}:${KAFKA_INTERNAL_PORT},
+        PLAINTEXT_HOST://localhost:${KAFKA_HOST_PORT}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
+        CONTROLLER:PLAINTEXT,
+        PLAINTEXT:PLAINTEXT,
+        PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Single-broker replication settings
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: ${KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR}
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: ${KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR}
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: ${KAFKA_TRANSACTION_STATE_LOG_MIN_ISR}
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Persistence
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: ${KAFKA_LOG_RETENTION_HOURS}
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: ${KAFKA_AUTO_CREATE_TOPICS_ENABLE}
+
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+    networks:
+      - bitestream-net
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "cub",
+          "kafka-ready",
+          "-b",
+          "${KAFKA_HOSTNAME}:${KAFKA_INTERNAL_PORT}",
+          "1",
+          "30",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 45s
+
+  # One-shot job: create food_delivery_events after Kafka is healthy, then exit.
+  kafka-init-topics:
+    image: ${KAFKA_IMAGE}
+    container_name: ${KAFKA_INIT_HOSTNAME}
+    restart: "no"  # Do not restart; this is a bootstrap job, not a long-running service
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    environment:
+      TZ: ${TZ}
+      LOG_DIR: /tmp  # Avoid Confluent CLI permission errors on default log paths
+      KAFKA_BOOTSTRAP_SERVER: ${KAFKA_HOSTNAME}:${KAFKA_INTERNAL_PORT}
+      FOOD_DELIVERY_EVENTS_TOPIC: ${FOOD_DELIVERY_EVENTS_TOPIC}
+      FOOD_DELIVERY_EVENTS_PARTITIONS: ${FOOD_DELIVERY_EVENTS_PARTITIONS}
+      FOOD_DELIVERY_EVENTS_REPLICATION_FACTOR: ${FOOD_DELIVERY_EVENTS_REPLICATION_FACTOR}
+      KAFKA_READY_BROKER_COUNT: ${KAFKA_READY_BROKER_COUNT}
+      KAFKA_READY_TIMEOUT_SECONDS: ${KAFKA_READY_TIMEOUT_SECONDS}
+
+    volumes:
+      - ./kafka/init-topics.sh:/opt/bitestream/init-topics.sh:ro
+
+    entrypoint: ["/bin/bash", "/opt/bitestream/init-topics.sh"]
+
+    networks:
+      - bitestream-net
+
+  # Web UI for topics, messages, consumer groups, and broker inspection.
+  kafka-ui:
+    image: ${KAFKA_UI_IMAGE}
+    hostname: ${KAFKA_UI_HOSTNAME}
+    container_name: ${KAFKA_UI_HOSTNAME}
+    restart: ${DOCKER_RESTART_POLICY}
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    ports:
+      - "${KAFKA_UI_HOST_PORT}:8080"
+
+    environment:
+      TZ: ${TZ}
+      SERVER_PORT: 8080
+      DYNAMIC_CONFIG_ENABLED: "true"
+      KAFKA_CLUSTERS_0_NAME: ${KAFKA_CLUSTER_NAME}
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: ${KAFKA_HOSTNAME}:${KAFKA_INTERNAL_PORT}
+
+    networks:
+      - bitestream-net
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  bitestream-net:
+    name: ${DOCKER_NETWORK_NAME}
+    driver: bridge
+
+volumes:
+  kafka-data:
+    name: ${KAFKA_DATA_VOLUME_NAME}
