@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FoodDeliveryEvent",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "event_timestamp",
+    "order",
+    "customer",
+    "restaurant",
+    "driver",
+    "payment",
+    "metadata"
+  ],
+  "properties": {
+    "event_id": { "type": "string" },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "ORDER_CREATED",
+        "ORDER_ACCEPTED",
+        "FOOD_PREPARATION_STARTED",
+        "FOOD_READY",
+        "DRIVER_ASSIGNED",
+        "ORDER_PICKED_UP",
+        "ORDER_DELIVERED",
+        "ORDER_CANCELLED",
+        "PAYMENT_COMPLETED",
+        "CUSTOMER_RATED"
+      ]
+    },
+    "event_timestamp": { "type": "string", "format": "date-time" },
+    "order": {
+      "type": "object",
+      "required": [
+        "order_id",
+        "status",
+        "total_amount",
+        "delivery_fee",
+        "tax_amount",
+        "discount_amount"
+      ],
+      "properties": {
+        "order_id": { "type": "string" },
+        "status": { "type": "string" },
+        "total_amount": { "type": "number" },
+        "delivery_fee": { "type": "number" },
+        "tax_amount": { "type": "number" },
+        "discount_amount": { "type": "number" }
+      }
+    },
+    "customer": {
+      "type": "object",
+      "required": ["customer_id", "city", "membership"],
+      "properties": {
+        "customer_id": { "type": "string" },
+        "city": { "type": "string" },
+        "membership": { "type": "string", "enum": ["Normal", "Silver", "Gold"] }
+      }
+    },
+    "restaurant": {
+      "type": "object",
+      "required": ["restaurant_id", "restaurant_name", "cuisine"],
+      "properties": {
+        "restaurant_id": { "type": "string" },
+        "restaurant_name": { "type": "string" },
+        "cuisine": { "type": "string" }
+      }
+    },
+    "driver": {
+      "type": "object",
+      "required": ["driver_id", "vehicle_type"],
+      "properties": {
+        "driver_id": { "type": "string" },
+        "vehicle_type": { "type": "string", "enum": ["Bike", "Scooter", "Car"] }
+      }
+    },
+    "payment": {
+      "type": "object",
+      "required": ["payment_method", "payment_status"],
+      "properties": {
+        "payment_method": { "type": "string", "enum": ["UPI", "Card", "Wallet", "COD"] },
+        "payment_status": { "type": "string", "enum": ["SUCCESS", "FAILED", "PENDING"] }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["source", "schema_version", "producer"],
+      "properties": {
+        "source": { "type": "string" },
+        "schema_version": { "type": "string" },
+        "producer": { "type": "string" }
+      }
+    }
+  }
+}
