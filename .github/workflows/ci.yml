@@ -2,20 +2,32 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - dev
+
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - dev
 
 jobs:
   test:
+    name: Run Python Tests
     runs-on: ubuntu-latest
+
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -23,4 +35,5 @@ jobs:
           pip install fastapi uvicorn pydantic pytest httpx
 
       - name: Run tests
-        run: pytest -q
+        run: |
+          pytest -q
